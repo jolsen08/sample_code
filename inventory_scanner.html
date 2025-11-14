@@ -1,0 +1,1191 @@
+{% extends 'base.html' %}
+{% load base64_filters %}
+{% block title %} Inventory {% endblock %}
+
+
+<!-- Inventory scanner UI for this project: Reserve, Checkout, and Return items via QR code scans. -->
+{% block content %}
+
+{% if user.is_authenticated %}
+<h1>{{project_name}} ITEMS</h1>
+<input type="hidden" id="csrf_token" value="{{ csrf_token }}">
+
+<div class='btn-container'>
+    {% if project_name != 'STAFF PURCHASES' and project_name != 'CLIENT GIFTS' %}
+    <button class="btn-inventory" id="reserveItemsBtn">Reserve</button>
+    {% endif %}
+
+    <button class="btn-inventory" id="checkoutItemsBtn">Checkout</button>
+
+    {% if placements %}
+    <button class="btn-inventory" id="returnItemsBtn">Return</button>
+    {% endif %}
+
+    
+</div>
+
+<br>
+
+<style>
+    .vr {
+        border-left: 2px solid #555;
+        height: 100%;
+        margin: 0 auto;
+    }
+</style>
+
+<style>
+.btn-container {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    padding: 20px;
+    gap: 15px;
+    width: 95%; 
+    margin: 0 auto; 
+}
+
+.btn-inventory {
+    flex: 1; 
+    min-width: 120px;
+    max-width: 250px;
+    padding: 15px;
+    font-size: 1.2rem; 
+    font-weight: bold;
+    text-transform: capitalize;
+    border-radius: 8px; 
+    border: none;
+    cursor: pointer;
+    background-color: #636f65; 
+    color: #ffffff;
+    transition: transform 0.2s, box-shadow 0.2s, background-color 0.2s; 
+    text-align: center;
+}
+
+/* Hover effect for buttons */
+.btn-inventory:hover {
+    background-color: #cbc6ba; 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2); 
+}
+
+/* Ensure responsiveness for smaller screens */
+@media (max-width: 768px) {
+    .btn-container {
+        flex-direction: column; 
+        width: 100%; 
+    }
+
+    .btn-inventory {
+        max-width: 100%;
+    }
+}
+
+  
+    @keyframes scan {
+        0% { background-position: 0 0; }
+        100% { background-position: 200% 0; }
+    }
+    
+    #reserveItemsModalLabel {
+        color: white;
+        background: linear-gradient(to right, green 30%, rgba(0, 128, 0, 0.5) 50%, green 70%);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: scan 2s infinite linear;
+    }
+
+    #checkoutItemsModalLabel {
+        color: white;
+        background: linear-gradient(to right, green 30%, rgba(0, 128, 0, 0.5) 50%, green 70%);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: scan 2s infinite linear;
+    }
+
+    #returnItemsModalLabel {
+        color: white;
+        background: linear-gradient(to right, green 30%, rgba(0, 128, 0, 0.5) 50%, green 70%);
+        background-size: 200% 100%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: scan 2s infinite linear;
+    }
+
+    .modal-footer p {
+        text-align: left;
+        margin-right: auto;
+        color:grey;
+    }
+
+
+</style>
+
+
+    <div class="modal fade" id="reserveItemsModal" tabindex="-1" role="dialog" aria-labelledby="reserveItemsModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="checkoutItemsModalLabel" style="color: green;">Ready to Scan</h5>
+
+                </div>
+                <div class="modal-body">
+                    <form id="hidden-input-form" method="post">
+                        <input type="hidden" id="hiddenInput" name="hiddenInput">
+                    </form>
+
+                    <div class="row row-cols-1 row-cols-md-3 g-4" id="itemCardsContainer">
+                        <!-- Dynamically populated cards will go here -->
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <p><i>Accidentally scanned an item? Confirm the session, then use a "Return" scan to add it back to inventory.</i></p>
+                    <button type="button" class="btn btn-secondary-btn" data-dismiss="modal">Cancel Reservation</button>
+                    <button type="button" class="btn btn-main-btn">Confirm Reservation</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="modal fade" id="checkoutItemsModal" tabindex="-1" role="dialog" aria-labelledby="checkoutItemsModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="checkoutItemsModalLabel" style="color: green;">Ready to Scan</h5>
+                 
+                    
+
+                </div>
+                <div class="modal-body">
+                    <form id="checkout-hidden-input-form" method="post">
+                        <input type="hidden" id="checkoutHiddenInput" name="checkoutHiddenInput">
+                    </form>
+
+                    <div class="row row-cols-1 row-cols-md-3 g-4" id="itemCardsContainer">
+                        <!-- Dynamically populated cards will go here -->
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <p><i>Accidentally scanned an item? Confirm the session, then use a "Return" scan to add it back to inventory.</i></p>
+                    <button type="button" class="btn btn-secondary-btn" data-dismiss="modal">Cancel Checkout</button>
+                    <button type="button" class="btn btn-main-btn" data-project-id="{{ project_id }}">Confirm Checkout</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="returnItemsModal" tabindex="-1" role="dialog" aria-labelledby="returnItemsModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
+        <div class="modal-dialog modal-xl" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="returnItemsModalLabel" style="color: green;">Ready to Scan</h5>
+
+                </div>
+                <div class="modal-body">
+                    <form id="return-hidden-input-form" method="post">
+                        <input type="hidden" id="returnHiddenInput" name="returnHiddenInput">
+                    </form>
+
+                    <div class="row row-cols-1 row-cols-md-3 g-4" id="itemCardsContainer">
+                        <!-- Dynamically populated cards will go here -->
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary-btn" data-dismiss="modal">Cancel Return</button>
+                    <button type="button" class="btn btn-main-btn">Confirm Return</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <audio id="errorSound" src="/media/error.mp3" preload="auto"></audio>
+    <audio id="successSound" src="/media/success.mp3" preload="auto"></audio>
+
+
+
+
+{% else %}
+<h3>Please sign in to view Inventory</h3>
+{% endif %}
+
+<!-- Bootstrap CSS -->
+
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+
+<script>
+
+    {% comment %} // Little animated "Ready to Scan..." label I can turn on later if I want.
+    document.addEventListener("DOMContentLoaded", function () {
+        const label = document.getElementById("reserveItemsModalLabel");
+        let dots = "";
+        
+        setInterval(() => {
+            dots = dots.length < 3 ? dots + "." : "";
+            label.textContent = `Ready to Scan${dots}`;
+        }, 500);
+    }); {% endcomment %}
+
+
+    function closeModal() {
+        const modal = document.getElementById('roomSelectorModal');
+        if (modal) {
+            modal.remove(); // Remove the modal from the DOM
+        }
+    }
+    
+    function confirmRoomSelection(sku, projectId, return_label) {
+        const selectedRoom = document.getElementById('roomDropdown').value;
+    
+        // Send data to the view function via a fetch request
+        fetch('/checkout_with_room/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken() // Assuming you have a function to fetch the CSRF token
+            },
+            body: JSON.stringify({
+                sku: sku,
+                project_id: projectId,
+                room_name: selectedRoom,
+                return_label: return_label,
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('Success:', data);
+                updateCheckoutModalContent(projectId);
+                document.getElementById('successSound').play();
+            } else {
+                alert("There was an error assigning the room.");
+            }
+            closeModal();
+        })
+        .catch(error => {
+            console.error("Error:", error);
+            closeModal();
+        });
+    }
+    
+
+    
+    function getCSRFToken() {
+        // Quick helper to pull the CSRF token out of the template.
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        return csrfToken;
+    }
+
+    function subtractItem(itemId, projectId) {
+        fetch(`/qr_code_reader/${projectId}/`, {  // Hit the Django view that handles reservation scans for this project.
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')  // Send the CSRF token along with the request.
+            },
+            body: JSON.stringify({ 'hiddenInput': itemId, 'item_count_change': true})  // Tell the view which SKU to adjust.
+        })
+        .then(response => response.json())  // Parse the JSON coming back from the view.
+        .then(data => {
+            if (data.success) {
+                console.log('Success:', data);
+                updateModalContent(data.items);
+                document.getElementById('successSound').play();
+                // Any extra success handling for this flow would go here.
+            } else {
+                document.getElementById('errorSound').play();
+                
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    }
+
+
+
+    function subtractReturnItem(itemId, projectId) {
+        fetch(`/return_qr_code_reader/${projectId}/`, {  // Hit the view that adjusts return counts for this project.
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')  // Standard Django CSRF header.
+            },
+            body: JSON.stringify({ 'hiddenInput': itemId, 'item_count_change': true})  // Send the SKU we want to tweak.
+        })
+        .then(response => response.json())  // Parse the JSON response from the return view.
+        .then(data => {
+            if (data.success) {
+                console.log('Success:', data);
+                updateReturnModalContent(data.items);
+                document.getElementById('successSound').play();
+                // Optionally handle any response data here
+            } else {
+                alert('There was an error.');
+                
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    }
+
+    function updateModalContent(items) {
+        const modalBody = $(`#reserveItemsModal .modal-body`);
+        const itemsContainer = modalBody.find('#itemCardsContainer');
+        modalBody.empty();  // Clear out whatever was in the modal before this scan session.
+        const project_id = "{{ project_id }}";
+        console.log(project_id)
+        
+        const itemsRow = $('<div class="row row-cols-1 row-cols-md-3 g-4"></div>');
+
+
+        items.forEach(item => {
+            console.log(item.reserved_quantity);
+            const itemCard = `
+                <div class="col">
+                    <div class="card text-center p-4 shadow-sm" style="border-radius: 20px;">
+                        <div class="card-body">    
+                            ${item.image ? 
+                                `<img src="data:image/png;base64,${item.image}" class="card-img-top" alt="Item Image" style="max-height: 200px; object-fit: cover;">` : 
+                                `<img src="/media/default_inventory_image/default_image.png" class="card-img-top" alt="No Image Available" style="max-height: 200px; object-fit: cover;">`}
+                            <p class="mt-2"><b>${item.studio_id}</b></p>
+                            <p>Price: $${item.sale_price}</p>
+                            <p>Reserved Quantity: ${item.quantity}</p>
+                            {% comment %} <button class="btn btn-danger mt-2 subtract-item-btn" data-item-id="${item.sku_num}" data-project-id="${project_id}">Subtract Item</button> {% endcomment %}
+                        </div>
+                    </div>
+                </div>
+            `;
+            itemsRow.append(itemCard);  // Add this item card into the current row.
+        });
+
+        modalBody.append(itemsRow);  // Drop the full row of cards into the modal body.
+    }
+
+
+    function updateCheckoutModalContent(items) {
+        const modalBody = $(`#checkoutItemsModal .modal-body`);
+        const itemsContainer = modalBody.find('#itemCardsContainer');
+        modalBody.empty();  // Reset the modal body for the latest checkout scan list.
+        const project_id = "{{ project_id }}";
+        console.log(project_id)
+        
+        const itemsRow = $('<div class="row row-cols-1 row-cols-md-3 g-4"></div>');
+
+
+        items.forEach(item => {
+            const itemCard = `
+                <div class="col">
+                    <div class="card text-center p-4 shadow-sm" style="border-radius: 20px;">
+                        <div class="card-body">    
+                            ${item.image ? 
+                                `<img src="data:image/png;base64,${item.image}" class="card-img-top" alt="Item Image" style="max-height: 200px; object-fit: cover;">` : 
+                                `<img src="/media/default_inventory_image/default_image.png" class="card-img-top" alt="No Image Available" style="max-height: 200px; object-fit: cover;">`}
+                            <p class="mt-2"><b>${item.studio_id}</b></p>
+                            <p>Price: $${item.sale_price}</p>
+                            <p>Checked Out Quantity: ${item.quantity}</p>
+                            {% comment %} <button class="btn btn-danger mt-2 subtract-item-btn" data-item-id="${item.sku_num}" data-project-id="${project_id}">Subtract Item</button> {% endcomment %}
+                        </div>
+                    </div>
+                </div>
+            `;
+            itemsRow.append(itemCard);  // Add this checked-out item into the row.
+        });
+
+        modalBody.append(itemsRow);  // Render the whole row into the checkout modal.
+    }
+
+
+
+
+    function updateReturnModalContent(items) {
+        const modalBody = $(`#returnItemsModal .modal-body`);
+        const itemsContainer = modalBody.find('#itemCardsContainer');
+        modalBody.empty();  // Start fresh for the current return scan session.
+        const project_id = "{{ project_id }}";
+        console.log(project_id)
+        
+        const itemsRow = $('<div class="row row-cols-1 row-cols-md-3 g-4"></div>');
+
+
+        items.forEach(item => {
+            console.log(item.reserved_quantity);
+            const itemCard = `
+                <div class="col">
+                    <div class="card text-center p-4 shadow-sm" style="border-radius: 20px;">
+                        <div class="card-body">    
+                            ${item.image ? 
+                                `<img src="data:image/png;base64,${item.image}" class="card-img-top" alt="Item Image" style="max-height: 200px; object-fit: cover;">` : 
+                                `<img src="/media/default_inventory_image/default_image.png" class="card-img-top" alt="No Image Available" style="max-height: 200px; object-fit: cover;">`}
+                            <p class="mt-2"><b>${item.studio_id}</b></p>
+                            <p>Price: $${item.sale_price}</p>
+                            <p>Return Qty: ${item.quantity}</p>
+                            {% comment %} <button class="btn btn-danger mt-2 subtract-item-btn-2" data-item-id="${item.sku_num}" data-project-id="${project_id}">Subtract Item</button> {% endcomment %}
+                        </div>
+                    </div>
+                </div>
+            `;
+            itemsRow.append(itemCard);  // Add this return item into the row of cards.
+        });
+
+        modalBody.append(itemsRow);  // Show the row of return cards in the modal.
+    }
+
+
+    // Cookie helper for grabbing the CSRF token (standard Django pattern for POSTs).
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+
+
+    document.addEventListener('DOMContentLoaded', function() {
+
+        const projectId = "{{ project_id }}";  // Project context passed in from Django.
+        console.log(projectId);
+    
+        const hiddenInput = document.getElementById('hiddenInput');
+        const form = document.getElementById('hidden-input-form');
+        let isModalOpen = false; // Track whether the Reserve modal is currently active.
+        const checkoutHiddenInput = document.getElementById('checkoutHiddenInput');
+        const checkout_form = document.getElementById('checkout-hidden-input-form');
+        // Track whether the Checkout modal is active.
+        let isCheckoutModalOpen = false; 
+    
+        const returnHiddenInput = document.getElementById('returnHiddenInput');
+        const return_form = document.getElementById('return-hidden-input-form');
+        // Track whether the Return modal is active.
+        let isReturnModalOpen = false; 
+
+        const placeHiddenInput = document.getElementById('placeHiddenInput');
+        const place_form = document.getElementById('place-hidden-input-form');
+        // Track whether the Placement modal is active.
+        let isPlaceModalOpen = false; 
+    
+        // Event listener for capturing input
+        document.addEventListener('keydown', function (event) {
+            if (!isModalOpen && !isCheckoutModalOpen && !isReturnModalOpen && !isPlaceModalOpen) return;
+
+            if (event.key.length === 1) { // Only care about single characters from the scanner.
+                let jsonObject = null; 
+        
+            // Append the key to whichever hidden input matches the active modal.
+            if (isModalOpen) hiddenInput.value += event.key;
+            if (isCheckoutModalOpen) checkoutHiddenInput.value += event.key;
+            if (isReturnModalOpen) returnHiddenInput.value += event.key;
+            if (isPlaceModalOpen) placeHiddenInput.value += event.key;
+        
+            const currentValue = isModalOpen
+                ? hiddenInput.value
+                : isCheckoutModalOpen
+                ? checkoutHiddenInput.value
+                : isReturnModalOpen
+                ? returnHiddenInput.value
+                : isPlaceModalOpen
+                ? placeHiddenInput.value
+                : "";
+        
+            // Try to peel out JSON-like chunks from the accumulated scanner input.
+            const jsonMatches = currentValue.match(/{.*?}/g); // Grab anything wrapped in `{}`.
+        
+            if (jsonMatches) {
+                jsonMatches.forEach((jsonString) => {
+                    try {
+                        const jsonObject = JSON.parse(jsonString);
+                        console.log("Valid JSON Detected:", jsonObject);
+        
+                        // Process the valid JSON
+                        if (isModalOpen) {
+                            submitForm(jsonObject.sku, jsonObject.item_u_id);
+                            hiddenInput.value = ''; // Clear after processing
+                        } else if (isCheckoutModalOpen) {
+                            submitCheckoutForm(jsonObject.sku, jsonObject.item_u_id);
+                            checkoutHiddenInput.value = ''; // Clear after processing
+                        } else if (isReturnModalOpen) {
+                            submitReturnForm(jsonObject.sku, jsonObject.item_u_id);
+                            returnHiddenInput.value = ''; // Clear after processing
+                        }
+
+                        else if (isPlaceModalOpen) {
+                            submitPlaceForm(jsonObject.sku, jsonObject.item_u_id);
+                            placeHiddenInput.value = ''; // Clear after processing
+                        }
+                    } catch (e) {
+                        console.error("Invalid JSON fragment:", jsonString);
+                    }
+                });
+            }
+            } else {
+                // For non-character keys, just log where we're at in the buffer.
+                console.log("Accumulating input:", currentValue);
+            }
+        });
+
+
+
+
+    function subtractCheckoutItem(itemId, projectId) {
+        console.log('HERE IS THE PROJECTID');
+        console.log(projectId);
+        fetch(`/subtract_checkout_item/${projectId}/`, {  // Hit the view that subtracts items from this checkout session.
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')  // Standard CSRF header for Django POSTs.
+            },
+            body: JSON.stringify({ 'hiddenInput': itemId, 'item_count_change': true})  // Tell the view which checkout SKU to adjust.
+        })
+        .then(response => response.json())  // Parse the JSON result from the subtract endpoint.
+        .then(data => {
+            if (data.success) {
+                console.log('Success:', data);
+                updateCheckoutModalContent(projectId);
+                document.getElementById('successSound').play();
+                // Optionally handle any response data here
+            } else {
+
+                if (data.message === 'multiple_rooms') {
+                    const roomNames = data.room_names; // Extract room names
+                    const projectId = data.project_id;
+    
+                    console.log('Room Names:', roomNames);
+                    console.log('Project ID:', projectId);
+
+                    openRoomSelectorModal(roomNames, data.sku, projectId, true);
+
+                }
+                
+                document.getElementById('errorSound').play();
+                
+            }
+        })
+        .catch(error => {
+            document.getElementById('errorSound').play();
+            console.error('Error:', error);
+        });
+    }
+
+
+
+
+  
+
+        // --- Confirm / Cancel button wiring for Reserve, Checkout, and Return flows. ---
+        const confirmButton = document.querySelector("#reserveItemsModal .btn-main-btn");
+
+        confirmButton.addEventListener("click", function() {
+            fetch(`/confirm_reservation/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ 'project_id': {{ project_id }} })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Reservation Saved!");
+                    window.location.reload();
+                } else {
+                    document.getElementById('errorSound').play();
+                    // Give the error sound a moment before popping the alert.
+                    setTimeout(function() {
+                        alert("An error occurred.");
+                    }, 500);
+                }
+            })
+            .catch(error => {
+                document.getElementById('errorSound').play();
+                console.error("Error:", error);
+            });
+        });
+
+
+        const checkoutConfirmButton = document.querySelector("#checkoutItemsModal .btn-main-btn");
+
+
+
+        checkoutConfirmButton.addEventListener("click", function() {
+            const projectId = checkoutConfirmButton.getAttribute("data-project-id");
+            fetch(`/confirm_checkout/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    project_id:projectId,
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Checkout Saved!");
+                    window.location.reload();
+                } else {
+                    document.getElementById('errorSound').play();
+                    // Give the error sound a moment before popping the alert.
+                    alert(data.message);
+                }
+            })
+            .catch(error => {
+                document.getElementById('errorSound').play();
+                console.error("Error:", error);
+            });
+        });
+
+
+        const returnConfirmButton = document.querySelector("#returnItemsModal .btn-main-btn");
+
+        returnConfirmButton.addEventListener("click", function() {
+            fetch(`/confirm_return/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({})  // Send an empty JSON object
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Return Saved!");
+                    window.location.reload();
+                } else {
+                    document.getElementById('errorSound').play();
+                    // Give the error sound a moment before popping the alert.
+                    setTimeout(function() {
+                        alert("An error occurred.");
+                    }, 500);
+                }
+            })
+            .catch(error => {
+                document.getElementById('errorSound').play();
+                console.error("Error:", error);
+            });
+        });
+
+
+        const cancelButton = document.querySelector("#reserveItemsModal .btn-secondary-btn");
+
+        cancelButton.addEventListener("click", function() {
+            fetch("/cancel_reservation/", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Reservation Canceled!");
+                    window.location.reload();
+             
+                } else {
+                    alert("An error occurred.");
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+            });
+        });
+
+
+        const checkoutCancelButton = document.querySelector("#checkoutItemsModal .btn-secondary-btn");
+
+        checkoutCancelButton.addEventListener("click", function() {
+            fetch("/cancel_checkout/", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Checkout Canceled!");
+                    window.location.reload();
+             
+                } else {
+                    document.getElementById('errorSound').play();
+                    // Give the error sound a moment before popping the alert.
+                    setTimeout(function() {
+                        alert("An error occurred.");
+                    }, 500);
+                }
+            })
+            .catch(error => {
+                document.getElementById('errorSound').play();
+                console.error("Error:", error);
+            });
+        });
+
+
+
+        const returnCancelButton = document.querySelector("#returnItemsModal .btn-secondary-btn");
+
+        returnCancelButton.addEventListener("click", function() {
+            fetch("/cancel_return/", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCookie("csrftoken"),
+                    "Content-Type": "application/json",
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Return Canceled!");
+                    window.location.reload();
+             
+                } else {
+                    alert("An error occurred.");
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+            });
+        });
+
+
+    
+    
+        // Button hooks to open the Reserve / Checkout / Return modals.
+        {% if project_name != 'STAFF PURCHASES' and project_name != 'CLIENT GIFTS' %}
+        document.getElementById('reserveItemsBtn').addEventListener('click', function() {
+            // Show the modal with static backdrop and no keyboard close
+            $('#reserveItemsModal').modal({
+                show: true,
+                backdrop: 'static',
+                keyboard: false
+            });
+        
+            // Focus the hidden input when the modal is displayed
+            hiddenInput.focus();
+        
+            // Set the flag to true when the modal opens
+            isModalOpen = true;
+        });
+
+        {% endif %}
+
+
+        document.getElementById('checkoutItemsBtn').addEventListener('click', function() {
+            console.log('buttonclicked');
+            // Show the modal with static backdrop and no keyboard close
+            $('#checkoutItemsModal').modal({
+                show: true,
+                backdrop: 'static',
+                keyboard: false
+            });
+            console.log('got to the point of showing the modal');
+        
+            // Focus the hidden input when the modal is displayed
+            checkoutHiddenInput.focus();
+        
+            // Set the flag to true when the modal opens
+            isCheckoutModalOpen = true;
+            console.log(isCheckoutModalOpen);
+        });
+
+        const returnItemsBtn = document.getElementById('returnItemsBtn');
+
+        if (returnItemsBtn) {
+
+            document.getElementById('returnItemsBtn').addEventListener('click', function() {
+                // Show the modal with static backdrop and no keyboard close
+                $('#returnItemsModal').modal({
+                    show: true,
+                    backdrop: 'static',
+                    keyboard: false
+                });
+            
+                // Focus the hidden input when the modal is displayed
+                returnHiddenInput.focus();
+            
+                // Set the flag to true when the modal opens
+                isReturnModalOpen = true;
+            });
+        }
+        
+
+    
+        // Event listener for closing the modal
+        $('#reserveItemsModal').on('shown.bs.modal', function () {
+            // Mark the Reserve modal as active and reset the input buffer.
+            isModalOpen = true;
+    
+            // Always clear the hidden input whenever the modal opens.
+            hiddenInput.value = '';
+        });
+
+        $('#reserveItemsModal').on('hidden.bs.modal', function () {
+            // Flip the flag off once the Reserve modal is closed.
+            isModalOpen = false;
+    
+            // Clear out any leftover scanner data on close.
+            hiddenInput.value = '';
+        });
+
+        $('#checkoutItemsModal').on('shown.bs.modal', function () {
+            // Mark the Checkout modal as active and reset the input buffer.
+            isCheckoutModalOpen = true;
+            console.log('checkoutItemsModal set to true');
+    
+            // Always clear the hidden input whenever the modal opens.
+            checkoutHiddenInput.value = '';
+        });
+
+        $('#checkoutItemsModal').on('hidden.bs.modal', function () {
+            // Flip the flag off once the Checkout modal is closed.
+            isCheckoutModalOpen = false;
+            console.log('checkoutItemsModal set to false');
+    
+            // Clear out any leftover scanner data on close.
+            checkoutHiddenInput.value = '';
+        });
+
+        $('#returnItemsModal').on('shown.bs.modal', function () {
+            // Mark the Return modal as active and reset the input buffer.
+            isReturnModalOpen = true;
+    
+            // Always clear the hidden input whenever the modal opens.
+            returnHiddenInput.value = '';
+        });
+
+        $('#returnItemsModal').on('hidden.bs.modal', function () {
+            // Flip the flag off once the Return modal is closed.
+            isReturnModalOpen = false;
+            
+    
+            // Clear out any leftover scanner data on close.
+            returnHiddenInput.value = '';
+        });
+    
+
+   
+
+    
+        // Send a Reserve scan to the backend for this SKU / item_u.
+        function submitForm(sku, item_u_id) {
+            const projectId = "{{ project_id }}";
+            fetch(`/qr_code_reader/${projectId}/`, {  // Reserve endpoint for this project's QR scans.
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')  // Django CSRF token for POST.
+                },
+                body: JSON.stringify({ 'hiddenInput': sku, 'item_u_id':item_u_id})  // Send the sku as JSON
+            })
+            .then(response => response.json())  // Parse the JSON payload coming back from the view.
+            .then(data => {
+                if (data.success) {
+                    console.log('Success:', data);
+                    updateModalContent(data.items);
+                    document.getElementById('successSound').play();
+                    // Hook spot if I want to wire more UI behavior into this flow later.
+                } else {
+                   
+                        document.getElementById('errorSound').play();
+
+                        // Give the error sound a moment before popping the alert.
+                        {% comment %} setTimeout(function() { {% endcomment %}
+                            alert(data.message);
+                        {% comment %} }, 500); {% endcomment %}
+                    
+                    
+                    
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+    
+
+        // Send a Checkout scan to the backend for this SKU / item_u.
+        function submitCheckoutForm(sku, item_u_id) {
+            const projectId = "{{ project_id }}";
+            fetch(`/checkout_qr_code_reader/${projectId}/`, {  // Checkout endpoint for this project's QR scans.
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')  // Django CSRF token for POST.
+                },
+                body: JSON.stringify({ 'hiddenInput': sku, 'item_u_id':item_u_id})  // Send the sku as JSON
+            })
+            .then(response => response.json()) // Parse the JSON payload coming back from the view.
+            .then(data => {
+                if (data.success) {
+                    console.log('Success:', data);
+                    updateCheckoutModalContent(data.items);
+                    document.getElementById('successSound').play();
+                    // Hook spot if I want to wire more UI behavior into this flow later.
+                } else {
+                    
+
+                    if (data.message === 'reserved_to_other_project') {
+                        document.getElementById('errorSound').play();
+                        // Show confirmation alert
+                        if (confirm("This item was reserved to another project. By proceeding, you would be stealing someone else's reservation. Would you like to proceed with checkout?")) {
+                            // If the user clicks "OK", send another POST request
+                            fetch(`/checkout_qr_code_reader_persists/${projectId}/`, { 
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': getCookie('csrftoken'), // Ensure CSRF token is sent if you're using Django
+                                },
+                                body: JSON.stringify({
+                                    'hiddenInput': sku,
+                                    'item_u_id':item_u_id,
+                                    'message':'reserved_to_other_project',
+                                })
+                            })
+                            .then(response => response.json())
+                            .then(newData => {
+                                if (newData.success) {
+                                    console.log('Success:', newData);
+                                    updateCheckoutModalContent(newData.items);
+                                    document.getElementById('successSound').play();
+                                } else {
+                                    console.error('Error proceeding without reservation:', newData.error);
+                                }
+                            })
+                            .catch(error => console.error('Error in second POST request:', error));
+                        }
+                    }
+
+
+                    else if (data.message === 'already_checked_out_to_project') {
+                        document.getElementById('errorSound').play();
+                        // Give the error sound a moment before popping the alert.
+                  
+                        alert("Looks like you already checked out this item to your project! Please return item before checking out.");
+                     
+                    }
+
+                    else if (data.message === 'checked_out_to_other_project') {
+                        document.getElementById('errorSound').play();
+                        // Give the error sound a moment before popping the alert.
+                  
+                        alert("This item is marked as checked out to another project. Please return item before checking out.");
+                     
+                    }
+
+                    else if (data.message === 'placed_to_project') {
+                        document.getElementById('errorSound').play();
+                        // Give the error sound a moment before popping the alert.
+                  
+                        alert("This item is marked as placed to a project. Please return item before checking out.");
+                     
+                    }
+
+                    else {
+                        document.getElementById('errorSound').play();
+                        alert(data.message);
+                    }
+
+
+                }
+            });
+        }
+
+        // Send a Return scan to the backend for this SKU / item_u.
+        function submitReturnForm(sku, item_u_id) {
+            const projectId = "{{ project_id }}";
+            fetch(`/return_qr_code_reader/${projectId}/`, {  // Return endpoint for this project's QR scans.
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')  // Django CSRF token for POST.
+                },
+                body: JSON.stringify({ 'hiddenInput': sku, 'item_u_id':item_u_id})  // Send the sku as JSON
+            })
+            .then(response => response.json())  // Parse the JSON payload coming back from the view.
+            .then(data => {
+                if (data.success) {
+                    console.log('Success:', data);
+                    updateReturnModalContent(data.items);
+                    document.getElementById('successSound').play();
+                    // Hook spot if I want to wire more UI behavior into this flow later.
+                } else {
+                    document.getElementById('errorSound').play();
+                    setTimeout(function() {
+                        alert(data.message);
+                    }, 500);
+
+                    
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+
+        // Send a Placement scan to the backend for this SKU / item_u.
+        function submitPlaceForm(sku, item_u_id) {
+            const projectId = "{{ project_id }}";
+            fetch(`/placement_qr_code_reader/${projectId}/`, {  // Placement endpoint for this project's QR scans.
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')  // Django CSRF token for POST.
+                },
+                body: JSON.stringify({ 'hiddenInput': sku, 'item_u_id':item_u_id})  // Send the sku as JSON
+            })
+            .then(response => response.json())  // Parse the JSON payload coming back from the view.
+            .then(data => {
+                if (data.success) {
+                    console.log('Success:', data);
+                    updatePlaceModalContent(data.items);
+                    document.getElementById('successSound').play();
+                    // Hook spot if I want to wire more UI behavior into this flow later.
+                } else {
+                    document.getElementById('errorSound').play();
+                 
+                    alert(data.message);
+
+                    
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        $(document).on('click', '.subtract-item-btn', function() {
+            const itemId = $(this).data('item-id');
+            const projectId = $(this).data('project-id');
+            subtractItem(itemId, projectId);
+        });
+
+        $(document).on('click', '.subtract-item-btn-1', function() {
+            const itemId = $(this).data('item-id');
+            const projectId = $(this).data('project-id');
+            subtractCheckoutItem(itemId, projectId);
+        });
+
+
+        $(document).on('click', '.subtract-item-btn-2', function() {
+            const itemId = $(this).data('item-id');
+            const projectId = $(this).data('project-id');
+            subtractReturnItem(itemId, projectId);
+        });
+
+       
+    
+    
+    // jQuery helpers to show each modal when its button is clicked.
+    $(document).ready(function() {
+        $('#reserveItemsBtn').on('click', function() {
+            $('#reserveItemsModal').modal('show');
+      
+        });
+    });
+
+    $(document).ready(function() {
+        $('#checkoutItemsBtn').on('click', function() {
+            console.log('clicked');
+            $('#checkoutItemsModal').modal('show');
+    
+        });
+    });
+
+    $(document).ready(function() {
+        $('#returnItemsBtn').on('click', function() {
+            $('#returnItemsModal').modal('show');
+
+        });
+    });
+
+
+    function openRoomSelectorModal(roomNames, sku, projectId, return_label) {
+
+        const labelText = return_label
+        ? "Which room would you like to return your reservation to?"
+        : "You've reserved this item in multiple rooms; which room are you checking this out for?"
+
+        const return_status = return_label
+        ? "return"
+        : "not_return"
+
+        // Build the room selector modal markup on the fly.
+        const modalHTML = `
+            <div id="roomSelectorModal" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="roomSelectorModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+                    <div class="modal-content shadow-sm" style="border-radius: 20px; overflow: hidden;">
+                        <div class="modal-header bg-success text-white">
+                            <h5 class="modal-title" id="roomSelectorModalLabel">Select a Room</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="roomSelectorForm">
+                            {% csrf_token %}
+                                <div class="mb-4">
+                                    <label for="roomDropdown" class="form-label">${labelText}</label>
+                                    <select id="roomDropdown" name="room_name" class="form-select">
+                                        ${roomNames.map(room => 
+                                            `<option value="${room}" ${room === 'Unassigned' ? 'selected' : ''}>${room}</option>`
+                                        ).join('')}
+                                    </select>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer d-flex justify-content-between">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" onclick="confirmRoomSelection('${sku}', '${projectId}', '${return_status}')">Confirm</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Attach the new modal HTML to the page.
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+        // Spin up the Bootstrap modal instance and show it.
+        const modal = new bootstrap.Modal(document.getElementById('roomSelectorModal'));
+        modal.show();
+        
+        // Once it's closed, clean up by removing the modal from the DOM.
+        document.getElementById('roomSelectorModal').addEventListener('hidden.bs.modal', function() {
+            this.remove();
+        });
+    }
+    
+
+});
+
+
+        
+</script>
+
+
+{% endblock %}
+
+
+
+    
